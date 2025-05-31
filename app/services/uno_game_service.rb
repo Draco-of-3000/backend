@@ -88,11 +88,12 @@ class UnoGameService
     
     player.add_card(drawn_card)
     
-    # Player can play the drawn card if it's valid
+    # Player can play the drawn card if it's valid.
+    # The turn does NOT automatically advance here. It only advances when a card is played.
     if valid_play?(drawn_card)
       { success: true, card_drawn: drawn_card, can_play: true }
     else
-      advance_turn
+      # advance_turn # REMOVED: Turn does not advance if drawn card is not playable.
       { success: true, card_drawn: drawn_card, can_play: false }
     end
   end
@@ -142,22 +143,29 @@ class UnoGameService
     top_card = game_state.top_card
     return unless top_card&.special?
     
+    current_turn_player = game_room.turn_player # Player who would be affected
+
     case top_card.card_type
     when 'skip'
-      advance_turn
+      advance_turn # Skips current_turn_player
     when 'reverse'
       reverse_direction
-      advance_turn if game_room.players.count == 2
+      # In a 2-player game, reverse acts like a skip for the other player.
+      # The current_turn_player effectively gets another turn after the direction reverses back to them.
+      # If more than 2 players, the turn advances based on the new direction.
+      advance_turn if game_room.players.count == 2 
     when 'draw_two'
-      force_draw_cards(game_room.turn_player, 2)
-      advance_turn
-    when 'wild', 'wild_draw_four'
-      # Set a random color for wild cards at start
-      game_room.update!(current_color: %w[red blue green yellow].sample)
-      if top_card.card_type == 'wild_draw_four'
-        force_draw_cards(game_room.turn_player, 4)
-        advance_turn
-      end
+      force_draw_cards(current_turn_player, 2)
+      advance_turn # Skips current_turn_player (who drew cards)
+    when 'wild'
+      # No automatic color choice here. current_color remains nil.
+      # The first player to play will set the color.
+      # No effect on turn beyond the game starting.
+      pass
+    when 'wild_draw_four'
+      # No automatic color choice here. current_color remains nil.
+      force_draw_cards(current_turn_player, 4)
+      advance_turn # Skips current_turn_player (who drew cards)
     end
   end
   
