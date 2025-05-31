@@ -1,0 +1,11 @@
+# Read about fixtures at https://api.rubyonrails.org/classes/ActiveRecord/FixtureSet.html
+
+one:
+  game_room: one
+  discard_pile: MyText
+  draw_pile: MyText
+
+two:
+  game_room: two
+  discard_pile: MyText
+  draw_pile: MyText
