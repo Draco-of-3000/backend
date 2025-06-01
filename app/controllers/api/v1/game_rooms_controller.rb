@@ -45,6 +45,15 @@ class Api::V1::GameRoomsController < Api::V1::BaseController
       return render_error('You are already in this game room')
     end
     
+    # Diagnostic logging
+    Rails.logger.info "[Player Schema] Table exists? #{Player.table_exists?}"
+    if Player.table_exists?
+      Rails.logger.info "[Player Schema] Primary key: #{Player.primary_key}"
+      Rails.logger.info "[Player Schema] Columns: #{Player.columns.map { |c| { name: c.name, type: c.type, sql_type: c.sql_type, null: c.null, default: c.default } }}"
+      Rails.logger.info "[Player Schema] Indexes: #{Player.connection.indexes(Player.table_name).map { |idx| { name: idx.name, columns: idx.columns, unique: idx.unique } }}"
+    end
+    # End diagnostic logging
+
     next_position = @game_room.players.maximum(:position).to_i + 1
     player = @game_room.players.create!(
       user: current_user,
