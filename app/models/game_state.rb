@@ -43,23 +43,23 @@ class GameState < ApplicationRecord
   def initialize_deck
     success = false
     self.class.transaction do
-      deck_data = Card.create_deck.shuffle
-      
+    deck_data = Card.create_deck.shuffle
+    
       min_cards_needed = (game_room.players.count * 7) # No extra card for discard pile initially
       if deck_data.length < min_cards_needed
         Rails.logger.error "Not enough cards generated to start game. Needed: #{min_cards_needed}, Got: #{deck_data.length}"
         raise ActiveRecord::Rollback, "Not enough cards to start game"
       end
 
-      game_room.players.each do |player|
-        player_cards = deck_data.shift(7)
-        player.update!(hand: player_cards)
-      end
-      
+    game_room.players.each do |player|
+      player_cards = deck_data.shift(7)
+      player.update!(hand: player_cards)
+    end
+    
       # No first card drawn to discard_pile
       self.discard_pile = [] 
-      self.draw_pile = deck_data
-      save!
+    self.draw_pile = deck_data
+    save!
       success = true
     end
     success

@@ -50,6 +50,10 @@ Rails.application.configure do
   config.active_job.queue_adapter = :solid_queue
   config.solid_queue.connects_to = { database: { writing: :queue } }
 
+  # Configure Action Cable settings
+  config.action_cable.url = ENV.fetch('ACTION_CABLE_URL') { "/cable" } # If your cable is at a subpath with a different host
+  config.action_cable.allowed_request_origins = [ ENV.fetch('FRONTEND_URL', 'https://default-frontend-url.com') ]
+
   # Ignore bad email addresses and do not raise email delivery errors.
   # Set this to true and configure the email server for immediate delivery to raise delivery errors.
   # config.action_mailer.raise_delivery_errors = false

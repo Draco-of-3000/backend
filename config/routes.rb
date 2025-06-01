@@ -12,16 +12,14 @@ Rails.application.routes.draw do
       resources :users, only: [:create, :show]
       
       # Game room management
-      resources :game_rooms, only: [:index, :create, :show] do
+      resources :game_rooms, only: [:index, :create, :show], param: :code do
         member do
           post :join
           post :start_game
           get :state
+          post :play_card
+          post :draw_card
         end
-        
-        # Game actions
-        post :play_card, on: :member
-        post :draw_card, on: :member
       end
     end
   end

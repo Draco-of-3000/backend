@@ -8,6 +8,7 @@ class GameRoom < ApplicationRecord
   validates :status, presence: true, inclusion: { in: %w[waiting in_progress finished] }
   validates :direction, presence: true, inclusion: { in: %w[clockwise counter_clockwise] }
   validates :current_color, inclusion: { in: %w[red blue green yellow], allow_nil: true }
+  validates :code, presence: true, uniqueness: true, on: :create
   
   validate :player_count_within_limits
   
@@ -15,6 +16,12 @@ class GameRoom < ApplicationRecord
   enum :direction, { clockwise: 'clockwise', counter_clockwise: 'counter_clockwise' }
   
   scope :available, -> { where(status: 'waiting') }
+  
+  before_validation :generate_unique_code, on: :create
+
+  def to_param
+    code
+  end
   
   def full?
     players.count >= 4
@@ -42,6 +49,13 @@ class GameRoom < ApplicationRecord
   def player_count_within_limits
     if players.count > 4
       errors.add(:players, "cannot exceed 4 players")
+    end
+  end
+
+  def generate_unique_code
+    loop do
+      self.code = ("A".."Z").to_a.sample(2).join + SecureRandom.random_number(1000..9999).to_s
+      break unless GameRoom.exists?(code: self.code)
     end
   end
 end

@@ -124,6 +124,7 @@ class UnoGameService
     {
       game_room: {
         id: game_room.id,
+        code: game_room.code,
         status: game_room.status,
         direction: game_room.direction,
         current_color: game_room.current_color,
@@ -172,9 +173,10 @@ class UnoGameService
     when 'reverse'
       reverse_direction
       if game_room.players.count == 2
-        # In 2-player game, reverse acts like skip
-        advance_turn
+        # In a 2-player game, Reverse acts like a Skip, so the current player plays again.
+        # No call to advance_turn here.
       else
+        # In games with >2 players, Reverse changes direction and advances turn.
         advance_turn
       end
     when 'draw_two'

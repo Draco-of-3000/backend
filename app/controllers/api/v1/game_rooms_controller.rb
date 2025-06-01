@@ -9,7 +9,10 @@ class Api::V1::GameRoomsController < Api::V1::BaseController
   end
   
   def create
-    game_room = GameRoom.new
+    game_room = GameRoom.new(
+      status: 'waiting',      # Default status
+      direction: 'clockwise'  # Default direction
+    )
     
     if game_room.save
       # Add creator as first player
@@ -51,7 +54,7 @@ class Api::V1::GameRoomsController < Api::V1::BaseController
     
     # Broadcast to game room channel
     ActionCable.server.broadcast(
-      "game_room_#{@game_room.id}",
+      "game_room_#{@game_room.code}",
       {
         type: 'player_joined',
         player: player_data(player),
@@ -63,7 +66,11 @@ class Api::V1::GameRoomsController < Api::V1::BaseController
   end
   
   def start_game
+    Rails.logger.info "Attempting to start game: Room ID: #{@game_room.id}, Code: #{@game_room.code}, Current Status: #{@game_room.status}, Player Count: #{@game_room.players.count}"
+    Rails.logger.info "can_start? evaluates to: #{@game_room.can_start?}"
+
     unless @game_room.can_start?
+      Rails.logger.error "Start game check failed: Room ID: #{@game_room.id}, Status: #{@game_room.status}, Players: #{@game_room.players.count}"
       return render_error('Cannot start game. Need 2-4 players and game must be waiting.')
     end
     
@@ -77,7 +84,7 @@ class Api::V1::GameRoomsController < Api::V1::BaseController
     if game_service.start_game
       # Broadcast game start to all players
       ActionCable.server.broadcast(
-        "game_room_#{@game_room.id}",
+        "game_room_#{@game_room.code}",
         {
           type: 'game_started',
           game_state: game_service.current_game_state
@@ -109,22 +116,22 @@ class Api::V1::GameRoomsController < Api::V1::BaseController
     if result[:success]
       if result[:game_finished]
         ActionCable.server.broadcast(
-          "game_room_#{@game_room.id}",
+          "game_room_#{@game_room.code}",
           {
             type: 'game_over',
             game_state: game_service.current_game_state
           }
         )
       else
-        ActionCable.server.broadcast(
-          "game_room_#{@game_room.id}",
-          {
-            type: 'card_played',
-            player_id: @player.id,
-            card: result[:card_played]&.to_hash,
+      ActionCable.server.broadcast(
+          "game_room_#{@game_room.code}",
+        {
+          type: 'card_played',
+          player_id: @player.id,
+          card: result[:card_played]&.to_hash,
             game_state: game_service.current_game_state
-          }
-        )
+        }
+      )
       end
       render_success({ card_played: result[:card_played]&.to_hash, game_finished: result[:game_finished] })
     else
@@ -139,7 +146,7 @@ class Api::V1::GameRoomsController < Api::V1::BaseController
     if result[:success]
       # Broadcast the draw to all players
       ActionCable.server.broadcast(
-        "game_room_#{@game_room.id}",
+        "game_room_#{@game_room.code}",
         {
           type: 'card_drawn',
           player_id: @player.id,
@@ -157,7 +164,7 @@ class Api::V1::GameRoomsController < Api::V1::BaseController
   private
   
   def set_game_room
-    @game_room = GameRoom.find_by(id: params[:id])
+    @game_room = GameRoom.find_by(code: params[:code])
     render_error('Game room not found', :not_found) unless @game_room
   end
   
@@ -169,6 +176,7 @@ class Api::V1::GameRoomsController < Api::V1::BaseController
   def game_room_data(game_room)
     {
       id: game_room.id,
+      code: game_room.code,
       status: game_room.status,
       direction: game_room.direction,
       current_color: game_room.current_color,
