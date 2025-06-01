@@ -52,7 +52,13 @@ Rails.application.configure do
 
   # Configure Action Cable settings
   config.action_cable.url = ENV.fetch('ACTION_CABLE_URL') { "/cable" } # If your cable is at a subpath with a different host
-  config.action_cable.allowed_request_origins = [ ENV.fetch('FRONTEND_URL', 'https://default-frontend-url.com') ]
+  # Allow specific frontend origin using regex, and also allow FRONTEND_URL env var if set.
+  # The regex is more specific for https://frontend-smoky-pi-17.vercel.app
+  allowed_origins = [%r{\Ahttps://frontend-smoky-pi-17\.vercel\.app\z}]
+  if ENV['FRONTEND_URL'].present?
+    allowed_origins << ENV['FRONTEND_URL']
+  end
+  config.action_cable.allowed_request_origins = allowed_origins.uniq
 
   # Ignore bad email addresses and do not raise email delivery errors.
   # Set this to true and configure the email server for immediate delivery to raise delivery errors.
