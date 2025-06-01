@@ -45,10 +45,11 @@ Rails.application.configure do
 
   # Replace the default in-process memory cache store with a durable alternative.
   config.cache_store = :solid_cache_store
+  config.solid_cache_store.connects_to = { database: { writing: :primary } }
 
   # Replace the default in-process and non-durable queuing backend for Active Job.
   config.active_job.queue_adapter = :solid_queue
-  config.solid_queue.connects_to = { database: { writing: :queue } }
+  config.solid_queue.connects_to = { database: { writing: :primary } }
 
   # Configure Action Cable settings
   config.action_cable.url = ENV.fetch('ACTION_CABLE_URL') { "/cable" } # If your cable is at a subpath with a different host
