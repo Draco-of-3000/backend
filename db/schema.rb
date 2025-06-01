@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_05_31_101801) do
+ActiveRecord::Schema[8.0].define(version: 2025_06_01_014151) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -30,8 +30,10 @@ ActiveRecord::Schema[8.0].define(version: 2025_05_31_101801) do
     t.string "current_color"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.bigint "winner_player_id"
     t.index ["status"], name: "index_game_rooms_on_status"
     t.index ["turn_player_id"], name: "index_game_rooms_on_turn_player_id"
+    t.index ["winner_player_id"], name: "index_game_rooms_on_winner_player_id"
   end
 
   create_table "game_states", force: :cascade do |t|
@@ -60,9 +62,12 @@ ActiveRecord::Schema[8.0].define(version: 2025_05_31_101801) do
     t.string "username", limit: 50, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.integer "wins", default: 0, null: false
+    t.integer "losses", default: 0, null: false
     t.index ["username"], name: "index_users_on_username", unique: true
   end
 
+  add_foreign_key "game_rooms", "players", column: "winner_player_id"
   add_foreign_key "game_states", "game_rooms"
   add_foreign_key "players", "game_rooms"
   add_foreign_key "players", "users"

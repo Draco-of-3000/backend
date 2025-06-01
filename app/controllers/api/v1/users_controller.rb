@@ -6,7 +6,7 @@ class Api::V1::UsersController < Api::V1::BaseController
     if @user.new_record? # If it's a new user, try to save
       if @user.save
         render_success({ user: user_data(@user) }, 'User created successfully')
-      else
+    else
         render_error(@user.errors.full_messages.join(', '))
       end
     else # If user already exists, just render the user data

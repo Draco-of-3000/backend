@@ -9,37 +9,30 @@ class UnoGameService
   def start_game
     return false unless game_room.can_start?
     
-    # Build game state if it doesn't exist, or use existing one
-    # GameState#initialize_deck will handle saving itself.
     @game_state = game_room.game_state || game_room.build_game_state
     
-    # initialize_deck now populates piles and saves the game_state record.
-    # It should return true on success or raise an error on failure.
-    # For simplicity, we assume it succeeds or raises.
-    unless @game_state.initialize_deck
+    # Initialize deck (deals cards to players, sets up draw_pile, discard_pile starts empty)
+    unless @game_state.initialize_deck 
       Rails.logger.error "Failed to initialize deck for game room: #{game_room.id} in UnoGameService."
-      # Errors should be logged within initialize_deck itself too.
       return false 
     end
-    
-    # Reload to ensure we have the persisted state, especially if it was just built and saved in initialize_deck
-    @game_state.reload
+    @game_state.reload # Ensure we have the persisted state
 
-    # Set first player
-    first_player = game_room.players.order(:position).first
+    # Randomly select first player
+    first_player = game_room.players.sample 
+    return false unless first_player
+
     game_room.update!(
       status: 'in_progress',
       turn_player: first_player,
-      current_color: game_state.top_card&.color
+      current_color: nil # No starting card, so no initial color
     )
     
-    # Handle special first card
-    handle_first_card_special_effects
+    # No handle_first_card_special_effects call, as discard pile is empty.
     
     true
   rescue ActiveRecord::RecordInvalid => e
-    # Log the error if GameState#initialize_deck or game_room.update! fails validation
-    Rails.logger.error "UnoGameService Start Game Error (after deck init): #{e.message} - #{e.record.errors.full_messages.join(', ')}"
+    Rails.logger.error "UnoGameService Start Game Error: #{e.message} - #{e.record.errors.full_messages.join(', ')}"
     false
   end
   
@@ -47,39 +40,53 @@ class UnoGameService
     return { success: false, error: "Not your turn" } unless player == game_room.turn_player
     return { success: false, error: "Game not in progress" } unless game_room.in_progress?
     
-    card = Card.find_by(card_data)
-    return { success: false, error: "Card not found" } unless card
-    return { success: false, error: "Card not in hand" } unless player_has_card?(player, card)
-    return { success: false, error: "Invalid play" } unless valid_play?(card)
+    card_to_play = Card.find_by(card_data)
+    return { success: false, error: "Card not found" } unless card_to_play
+    return { success: false, error: "Card not in hand" } unless player_has_card?(player, card_to_play)
     
-    # Remove card from player's hand
-    player.remove_card(card)
-    
-    # Add card to discard pile
-    game_state.add_to_discard_pile(card)
-    
-    # Handle wild card color choice
-    if card.wild? && chosen_color
-      game_room.update!(current_color: chosen_color)
-    else
-      game_room.update!(current_color: card.color)
+    is_first_play = game_state.discard_pile.empty?
+
+    unless is_first_play || valid_play?(card_to_play)
+      return { success: false, error: "Invalid play" }
     end
     
-    # Check for win condition
+    player.remove_card(card_to_play)
+    game_state.add_to_discard_pile(card_to_play)
+    
+    new_current_color = card_to_play.color
+    if card_to_play.wild?
+      return { success: false, error: "Must choose a color for Wild card" } unless chosen_color
+      new_current_color = chosen_color
+    end
+    game_room.update!(current_color: new_current_color)
+    
     if player.has_won?
-      game_room.update!(status: 'finished')
-      return { success: true, winner: player, game_finished: true }
+      game_room.update!(status: 'finished', winner_player_id: player.id)
+      
+      # Record win/loss stats
+      winner_user = player.user
+      winner_user.increment!(:wins)
+      
+      game_room.players.where.not(id: player.id).each do |losing_player|
+        losing_player.user.increment!(:losses)
+      end
+      
+      return { success: true, game_finished: true } # Winner info will be in game_state now
     end
     
-    # Apply special card effects
-    apply_special_card_effects(card, player)
+    apply_special_card_effects(card_to_play, player)
     
-    { success: true, card_played: card }
+    { success: true, card_played: card_to_play }
   end
   
   def draw_card(player)
     return { success: false, error: "Not your turn" } unless player == game_room.turn_player
     return { success: false, error: "Game not in progress" } unless game_room.in_progress?
+
+    # Check if player has any playable card in hand
+    if player.hand_cards.any? { |card_in_hand| valid_play?(card_in_hand) }
+      return { success: false, error: "You have a playable card. You cannot draw." }
+    end
     
     game_state.ensure_draw_pile_has_cards
     drawn_card = game_state.draw_card
@@ -99,13 +106,21 @@ class UnoGameService
   end
   
   def valid_play?(card)
+    # If discard pile is empty, any card is a valid first play.
+    return true if game_state.discard_pile.empty? 
+
     top_card = game_state.top_card
-    return false unless top_card
+    return false unless top_card # Should not be nil if not empty discard pile
     
     card.can_play_on?(top_card, game_room.current_color)
   end
   
   def current_game_state
+    winner_data = nil
+    if game_room.finished? && game_room.winner_player
+      winner_data = player_data_for_game_state(game_room.winner_player)
+    end
+
     {
       game_room: {
         id: game_room.id,
@@ -115,21 +130,26 @@ class UnoGameService
         turn_player_id: game_room.turn_player_id
       },
       players: game_room.players.order(:position).map do |player|
-        {
-          id: player.id,
-          user_id: player.user_id,
-          username: player.user.username,
-          position: player.position,
-          hand_size: player.hand_size,
-          hand: player.hand
-        }
+        player_data_for_game_state(player).merge(hand: player.hand) # Ensure hand is included for current player
       end,
-      top_card: game_state.top_card&.to_hash,
-      draw_pile_size: game_state.cards_remaining_in_draw_pile
+      top_card: @game_state&.top_card&.to_hash, # Use @game_state here
+      draw_pile_size: @game_state&.cards_remaining_in_draw_pile, # Use @game_state here
+      winner: winner_data
     }
   end
   
   private
+  
+  def player_data_for_game_state(player)
+    {
+      id: player.id,
+      user_id: player.user.id, # Ensure we get user_id from user object
+      username: player.user.username,
+      position: player.position,
+      hand_size: player.hand_size
+      # Note: hand is added separately for the full player list if needed by current player
+    }
+  end
   
   def player_has_card?(player, card)
     player.hand.any? do |hand_card|
@@ -139,35 +159,10 @@ class UnoGameService
     end
   end
   
-  def handle_first_card_special_effects
-    top_card = game_state.top_card
-    return unless top_card&.special?
-    
-    current_turn_player = game_room.turn_player # Player who would be affected
-
-    case top_card.card_type
-    when 'skip'
-      advance_turn # Skips current_turn_player
-    when 'reverse'
-      reverse_direction
-      # In a 2-player game, reverse acts like a skip for the other player.
-      # The current_turn_player effectively gets another turn after the direction reverses back to them.
-      # If more than 2 players, the turn advances based on the new direction.
-      advance_turn if game_room.players.count == 2 
-    when 'draw_two'
-      force_draw_cards(current_turn_player, 2)
-      advance_turn # Skips current_turn_player (who drew cards)
-    when 'wild'
-      # No automatic color choice here. current_color remains nil.
-      # The first player to play will set the color.
-      # No effect on turn beyond the game starting.
-      pass
-    when 'wild_draw_four'
-      # No automatic color choice here. current_color remains nil.
-      force_draw_cards(current_turn_player, 4)
-      advance_turn # Skips current_turn_player (who drew cards)
-    end
-  end
+  # handle_first_card_special_effects is no longer needed and can be removed or left commented out
+  # def handle_first_card_special_effects(starting_player)
+  # ... 
+  # end
   
   def apply_special_card_effects(card, current_player)
     case card.card_type

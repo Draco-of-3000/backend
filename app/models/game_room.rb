@@ -2,6 +2,7 @@ class GameRoom < ApplicationRecord
   has_many :players, dependent: :destroy
   has_many :users, through: :players
   has_one :game_state, dependent: :destroy
+  belongs_to :winner_player, class_name: 'Player', optional: true
   belongs_to :turn_player, class_name: 'Player', optional: true
   
   validates :status, presence: true, inclusion: { in: %w[waiting in_progress finished] }

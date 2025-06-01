@@ -1,8 +1,8 @@
 class GameState < ApplicationRecord
   belongs_to :game_room
   
-  validates :discard_pile, presence: true
-  validates :draw_pile, presence: true
+  # validates :discard_pile, presence: true # Temporarily remove/modify for empty discard start
+  # validates :draw_pile, presence: true # This one is fine
   
   serialize :discard_pile, coder: JSON
   serialize :draw_pile, coder: JSON
@@ -42,36 +42,31 @@ class GameState < ApplicationRecord
   
   def initialize_deck
     success = false
-    self.class.transaction do # Use self.class.transaction for model methods
+    self.class.transaction do
       deck_data = Card.create_deck.shuffle
       
-      # Ensure there are enough cards for dealing and initial discard
-      min_cards_needed = (game_room.players.count * 7) + 1
+      min_cards_needed = (game_room.players.count * 7) # No extra card for discard pile initially
       if deck_data.length < min_cards_needed
         Rails.logger.error "Not enough cards generated to start game. Needed: #{min_cards_needed}, Got: #{deck_data.length}"
-        # This should ideally not happen if Card.create_deck is correct
         raise ActiveRecord::Rollback, "Not enough cards to start game"
       end
 
       game_room.players.each do |player|
         player_cards = deck_data.shift(7)
-        player.update!(hand: player_cards) # If this fails, transaction rolls back
+        player.update!(hand: player_cards)
       end
       
-      first_card = deck_data.shift
-      # This check is now less critical due to the one above, but good for safety.
-      raise ActiveRecord::Rollback, "Internal error: Not enough cards for discard pile after dealing" if first_card.nil?
-
-      self.discard_pile = [first_card]
+      # No first card drawn to discard_pile
+      self.discard_pile = [] 
       self.draw_pile = deck_data
-      save! # If this fails (e.g., presence validation if piles somehow ended up empty), transaction rolls back
+      save!
       success = true
     end
-    success # Return true if transaction completed
-  rescue ActiveRecord::RecordInvalid => e # Catch validation errors from self.save! or player.update!
+    success
+  rescue ActiveRecord::RecordInvalid => e
     Rails.logger.error "GameState Initialize Deck Error (RecordInvalid): #{e.message} - #{e.record.errors.full_messages.join(', ')}"
-    false # Explicitly return false on error
-  rescue ActiveRecord::Rollback => e # Catch explicit rollback
+    false
+  rescue ActiveRecord::Rollback => e
     Rails.logger.error "GameState Initialize Deck Error (Rollback): #{e.message}"
     false
   end

@@ -34,12 +34,12 @@ class Api::V1::GameRoomsController < Api::V1::BaseController
       return render_error('Game room is full')
     end
     
-    if @game_room.players.exists?(user: current_user)
-      return render_error('You are already in this game room')
+    if @game_room.in_progress? || @game_room.finished?
+      return render_error('Game is already in progress or has finished. Cannot join.')
     end
     
-    if @game_room.in_progress?
-      return render_error('Game is already in progress')
+    if @game_room.players.exists?(user: current_user)
+      return render_error('You are already in this game room')
     end
     
     next_position = @game_room.players.maximum(:position).to_i + 1
@@ -107,20 +107,26 @@ class Api::V1::GameRoomsController < Api::V1::BaseController
     result = game_service.play_card(@player, card_data, chosen_color)
     
     if result[:success]
-      # Broadcast the move to all players
-      ActionCable.server.broadcast(
-        "game_room_#{@game_room.id}",
-        {
-          type: 'card_played',
-          player_id: @player.id,
-          card: result[:card_played]&.to_hash,
-          game_state: game_service.current_game_state,
-          winner: result[:winner] ? player_data(result[:winner]) : nil,
-          game_finished: result[:game_finished]
-        }
-      )
-      
-      render_success(result)
+      if result[:game_finished]
+        ActionCable.server.broadcast(
+          "game_room_#{@game_room.id}",
+          {
+            type: 'game_over',
+            game_state: game_service.current_game_state
+          }
+        )
+      else
+        ActionCable.server.broadcast(
+          "game_room_#{@game_room.id}",
+          {
+            type: 'card_played',
+            player_id: @player.id,
+            card: result[:card_played]&.to_hash,
+            game_state: game_service.current_game_state
+          }
+        )
+      end
+      render_success({ card_played: result[:card_played]&.to_hash, game_finished: result[:game_finished] })
     else
       render_error(result[:error])
     end
