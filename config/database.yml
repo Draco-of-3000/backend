@@ -81,3 +81,8 @@ test:
 production:
   <<: *default
   url: <%= ENV['DATABASE_URL'] %>
+  # Add a dummy 'cache' entry that also uses the main DATABASE_URL
+  # to satisfy SolidCache::Record.connects_to
+  cache:
+    <<: *default # Inherit adapter, encoding, pool from default
+    url: <%= ENV['DATABASE_URL'] %>
