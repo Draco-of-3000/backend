@@ -122,52 +122,36 @@ class Api::V1::GameRoomsController < Api::V1::BaseController
       final_payload = JSON.parse(stringified_payload)
       Rails.logger.info "Payload for MAIN broadcast PREPARED (json stringified/parsed). Data: #{final_payload.inspect[0..500]}..."
 
-      # DIAGNOSTIC BROADCAST - Player part only
+      # DIAGNOSTIC BROADCAST - Player part only (Still useful as it passes)
       begin
         Rails.logger.info "Attempting DIAGNOSTIC broadcast with PLAYER part only to room: game_room_#{@game_room.code}"
-        ActionCable.server.broadcast("game_room_#{@game_room.code}", { type: 'diagnostic_player_only', player: final_payload[:player] })
+        # Access with string key due to JSON.parse
+        ActionCable.server.broadcast("game_room_#{@game_room.code}", { type: 'diagnostic_player_only', player: final_payload["player"] })
         Rails.logger.info "DIAGNOSTIC broadcast with PLAYER part only SUCCEEDED"
       rescue => e
         Rails.logger.error "DIAGNOSTIC broadcast with PLAYER part only FAILED: #{e.class} - #{e.message}"
-        # Do not re-raise, continue to next diagnostic
       end
 
-      # DIAGNOSTIC BROADCAST - GameRoom part only
-      begin
-        Rails.logger.info "Attempting DIAGNOSTIC broadcast with GAMEROOM part only to room: game_room_#{@game_room.code}"
-        ActionCable.server.broadcast("game_room_#{@game_room.code}", { type: 'diagnostic_gameroom_only', game_room: final_payload[:game_room] })
-        Rails.logger.info "DIAGNOSTIC broadcast with GAMEROOM part only SUCCEEDED"
-      rescue => e
-        Rails.logger.error "DIAGNOSTIC broadcast with GAMEROOM part only FAILED: #{e.class} - #{e.message}"
-        # Do not re-raise, continue to main broadcast attempt
-      end
-
-      # DIAGNOSTIC BROADCAST - GameRoom part MINUS Players Array
-      begin
-        game_room_minus_players = final_payload[:game_room].except(:players)
-        Rails.logger.info "Attempting DIAGNOSTIC broadcast with GAMEROOM part (NO PLAYERS ARRAY) to room: game_room_#{@game_room.code}"
-        ActionCable.server.broadcast("game_room_#{@game_room.code}", { type: 'diagnostic_gameroom_no_players_array', game_room_details: game_room_minus_players })
-        Rails.logger.info "DIAGNOSTIC broadcast with GAMEROOM part (NO PLAYERS ARRAY) SUCCEEDED"
-      rescue => e
-        Rails.logger.error "DIGNOSTIC broadcast with GAMEROOM part (NO PLAYERS ARRAY) FAILED: #{e.class} - #{e.message}"
-      end
-
-      # DIAGNOSTIC BROADCAST - Players Array ONLY
-      begin
-        players_array_only = final_payload[:game_room][:players]
-        Rails.logger.info "Attempting DIAGNOSTIC broadcast with PLAYERS ARRAY ONLY (key: :p_data) to room: game_room_#{@game_room.code}"
-        # Using a generic key like :p_data instead of :players
-        ActionCable.server.broadcast("game_room_#{@game_room.code}", { type: 'diagnostic_p_data_array_only', p_data: players_array_only })
-        Rails.logger.info "DIAGNOSTIC broadcast with PLAYERS ARRAY ONLY (key: :p_data) SUCCEEDED"
-      rescue => e
-        Rails.logger.error "DIAGNOSTIC broadcast with PLAYERS ARRAY ONLY (key: :p_data) FAILED: #{e.class} - #{e.message}"
-      end
+      # Removed the failing diagnostic blocks for GAMEROOM part MINUS Players and Players Array ONLY
 
       # Prepare final payload for ACTUAL broadcast, renaming :players key in game_room
-      actual_broadcast_payload = final_payload.deep_dup # Ensure we don't modify final_payload if used elsewhere
-      if actual_broadcast_payload[:game_room] && actual_broadcast_payload[:game_room].key?(:players)
-        Rails.logger.info "Renaming :players key to :player_list in game_room data for broadcast."
-        actual_broadcast_payload[:game_room][:player_list] = actual_broadcast_payload[:game_room].delete(:players)
+      actual_broadcast_payload = final_payload.deep_dup # final_payload has string keys
+      
+      # Consistently use string keys for access and modification
+      game_room_object_from_payload = actual_broadcast_payload["game_room"]
+
+      if game_room_object_from_payload.is_a?(Hash) && game_room_object_from_payload.key?("players")
+        Rails.logger.info "Renaming 'players' key to 'player_list' in game_room data for broadcast."
+        game_room_object_from_payload["player_list"] = game_room_object_from_payload.delete("players")
+      else
+        Rails.logger.warn "Could not find 'players' key in actual_broadcast_payload['game_room'] to rename. Current game_room data: #{game_room_object_from_payload.inspect[0..500]}..."
+      end
+
+      # Log the keys of the game_room part of the payload right before broadcasting
+      if game_room_object_from_payload.is_a?(Hash)
+        Rails.logger.info "Keys in actual_broadcast_payload['game_room'] after potential rename: #{game_room_object_from_payload.keys.inspect}"
+      else
+        Rails.logger.warn "actual_broadcast_payload['game_room'] is not a Hash or is nil before broadcast logging keys: #{game_room_object_from_payload.inspect}"
       end
 
       Rails.logger.info "Broadcasting ACTUAL player_joined event with modified payload: #{actual_broadcast_payload.inspect[0..500]}..."
