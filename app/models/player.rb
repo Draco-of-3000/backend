@@ -3,7 +3,7 @@ class Player < ApplicationRecord
   belongs_to :game_room
   
   validates :position, presence: true, uniqueness: { scope: :game_room_id }
-  validate :unique_user_per_game_room
+  validates :user_id, uniqueness: { scope: :game_room_id, message: "is already in this game room" }
   
   serialize :hand, coder: JSON
   
@@ -37,7 +37,7 @@ class Player < ApplicationRecord
       new_hand = current_hand.dup
       new_hand.delete_at(index_to_remove)
       self.hand = new_hand
-    save!
+      save!
       return true
     else
       Rails.logger.warn "Player #{self.id}: Card to remove #{card_to_remove_attrs.inspect} not found in hand #{current_hand.inspect}"
@@ -51,13 +51,5 @@ class Player < ApplicationRecord
   
   def hand_size
     hand.size
-  end
-  
-  private
-  
-  def unique_user_per_game_room
-    if Player.where(user: user, game_room: game_room).where.not(id: id).exists?
-      errors.add(:user, "is already in this game room")
-    end
   end
 end
