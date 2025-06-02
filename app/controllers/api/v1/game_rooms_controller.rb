@@ -47,25 +47,34 @@ class Api::V1::GameRoomsController < Api::V1::BaseController
     
     next_position = @game_room.players.maximum(:position).to_i + 1
     
-    # Use direct Player creation instead of association create!
-    player = Player.create!(
-      user: current_user,
-      game_room: @game_room,
-      position: next_position,
-      hand: []
-    )
-    
-    # Broadcast to game room channel
-    ActionCable.server.broadcast(
-      "game_room_#{@game_room.code}",
-      {
-        type: 'player_joined',
-        player: player_data(player),
-        game_room: game_room_data(@game_room)
-      }
-    )
-    
-    render_success({ game_room: game_room_data(@game_room) }, 'Joined game room successfully')
+    # Use transaction to ensure atomicity
+    Player.transaction do
+      # Use association create! which is more reliable than direct model creation
+      player = @game_room.players.create!(
+        user: current_user,
+        position: next_position,
+        hand: []
+      )
+      
+      # Broadcast to game room channel
+      ActionCable.server.broadcast(
+        "game_room_#{@game_room.code}",
+        {
+          type: 'player_joined',
+          player: player_data(player),
+          game_room: game_room_data(@game_room)
+        }
+      )
+      
+      render_success({ game_room: game_room_data(@game_room) }, 'Joined game room successfully')
+    end
+  rescue ActiveRecord::RecordInvalid => e
+    Rails.logger.error "Validation error creating player: #{e.message}"
+    render_error("Failed to join game room: #{e.record.errors.full_messages.join(', ')}")
+  rescue => e
+    Rails.logger.error "Unexpected error in join: #{e.class} - #{e.message}"
+    Rails.logger.error "Backtrace: #{e.backtrace.first(10).join('\n')}"
+    render_error('Failed to join game room. Please try again.')
   end
   
   def start_game
