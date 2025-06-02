@@ -79,10 +79,5 @@ test:
 # for a full overview on how database connection configuration can be specified.
 #
 production:
-  <<: *default
+    <<: *default
   url: <%= ENV['DATABASE_URL'] %>
-  # Add a dummy 'cache' entry that also uses the main DATABASE_URL
-  # to satisfy SolidCache::Record.connects_to
-  cache:
-    <<: *default # Inherit adapter, encoding, pool from default
-    url: <%= ENV['DATABASE_URL'] %>
