@@ -49,12 +49,17 @@ class Api::V1::GameRoomsController < Api::V1::BaseController
     
     # Use transaction to ensure atomicity
     Player.transaction do
-      # Use association create! which is more reliable than direct model creation
-      player = @game_room.players.create!(
+      # Force Rails to use traditional insert instead of insert_all to avoid
+      # Rails 8.0 unique index detection issues with Supabase/production PostgreSQL
+      player = Player.new(
         user: current_user,
+        game_room: @game_room,
         position: next_position,
         hand: []
       )
+      
+      # Use save! instead of create! to bypass Rails 8.0 insert_all optimization
+      player.save!
       
       # Broadcast to game room channel
       ActionCable.server.broadcast(
