@@ -78,16 +78,35 @@ class Api::V1::GameRoomsController < Api::V1::BaseController
       end
       
       # Broadcast to game room channel
+      Rails.logger.info "About to broadcast player_joined event"
+      begin
+        player_data_result = player_data(player)
+        Rails.logger.info "Successfully generated player_data"
+      rescue => e
+        Rails.logger.error "Error in player_data: #{e.class} - #{e.message}"
+        raise e
+      end
+      
+      begin
+        game_room_data_result = game_room_data(@game_room)
+        Rails.logger.info "Successfully generated game_room_data"
+      rescue => e
+        Rails.logger.error "Error in game_room_data: #{e.class} - #{e.message}"
+        raise e
+      end
+      
       ActionCable.server.broadcast(
         "game_room_#{@game_room.code}",
         {
           type: 'player_joined',
-          player: player_data(player),
-          game_room: game_room_data(@game_room)
+          player: player_data_result,
+          game_room: game_room_data_result
         }
       )
+      Rails.logger.info "Successfully broadcasted player_joined event"
       
-      render_success({ game_room: game_room_data(@game_room) }, 'Joined game room successfully')
+      Rails.logger.info "About to render success response"
+      render_success({ game_room: game_room_data_result }, 'Joined game room successfully')
     end
   rescue ActiveRecord::RecordInvalid => e
     Rails.logger.error "Validation error creating player: #{e.message}"
@@ -207,6 +226,30 @@ class Api::V1::GameRoomsController < Api::V1::BaseController
   end
   
   def game_room_data(game_room)
+    # In production, use raw SQL for players query to avoid Rails 8.0 insert_all optimization issues
+    if Rails.env.production?
+      Rails.logger.debug "Using raw SQL for players query in game_room_data"
+      # Use raw SQL to get players data to avoid Rails 8.0 optimization issues
+      players_data = ActiveRecord::Base.connection.exec_query(
+        "SELECT p.id, p.user_id, p.position, p.hand, u.username " \
+        "FROM players p JOIN users u ON p.user_id = u.id " \
+        "WHERE p.game_room_id = $1 ORDER BY p.position",
+        "Players Query",
+        [game_room.id]
+      ).map do |row|
+        {
+          id: row['id'],
+          user_id: row['user_id'],
+          username: row['username'],
+          position: row['position'],
+          hand_size: JSON.parse(row['hand'] || '[]').size
+        }
+      end
+    else
+      Rails.logger.debug "Using standard Rails approach for players query in #{Rails.env}"
+      players_data = game_room.players.order(:position).map { |player| player_data(player) }
+    end
+    
     {
       id: game_room.id,
       code: game_room.code,
@@ -214,10 +257,10 @@ class Api::V1::GameRoomsController < Api::V1::BaseController
       direction: game_room.direction,
       current_color: game_room.current_color,
       turn_player_id: game_room.turn_player_id,
-      player_count: game_room.players.count,
-      players: game_room.players.order(:position).map { |player| player_data(player) },
-      can_start: game_room.can_start?,
-      is_full: game_room.full?,
+      player_count: Rails.env.production? ? players_data.length : game_room.players.count,
+      players: players_data,
+      can_start: Rails.env.production? ? (players_data.length >= 2 && game_room.status == 'waiting') : game_room.can_start?,
+      is_full: Rails.env.production? ? (players_data.length >= 4) : game_room.full?,
       created_at: game_room.created_at
     }
   end
