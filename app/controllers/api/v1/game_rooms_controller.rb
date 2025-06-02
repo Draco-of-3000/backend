@@ -95,13 +95,85 @@ class Api::V1::GameRoomsController < Api::V1::BaseController
         raise e
       end
       
+      # TEST BROADCAST (DIAGNOSTIC)
+      begin
+        Rails.logger.info "Attempting TEST broadcast with static data to room: game_room_#{@game_room.code}"
+        ActionCable.server.broadcast("game_room_#{@game_room.code}", { type: 'test_event', message: 'Hello world', timestamp: Time.now.to_i })
+        Rails.logger.info "TEST broadcast with static data SUCCEEDED"
+      rescue => e
+        Rails.logger.error "TEST broadcast with static data FAILED: #{e.class} - #{e.message}"
+        Rails.logger.error "TEST broadcast Backtrace: #{e.backtrace.join('\n')}" # Log full backtrace for test
+        # Do not re-raise yet, let the main broadcast attempt proceed to see if it also fails
+      end
+      # END TEST BROADCAST
+
+      # Prepare payload for main broadcast
+      Rails.logger.info "Preparing payload for MAIN broadcast..."
+      raw_payload_player_data = deep_to_plain_object(player_data_result.as_json)
+      raw_payload_game_room_data = deep_to_plain_object(game_room_data_result.as_json)
+      
+      # Aggressively ensure plain Ruby hash by converting to JSON string and back
+      stringified_payload = { 
+        type: 'player_joined',
+        player: raw_payload_player_data,
+        game_room: raw_payload_game_room_data
+      }.to_json
+      
+      final_payload = JSON.parse(stringified_payload)
+      Rails.logger.info "Payload for MAIN broadcast PREPARED (json stringified/parsed). Data: #{final_payload.inspect[0..500]}..."
+
+      # DIAGNOSTIC BROADCAST - Player part only
+      begin
+        Rails.logger.info "Attempting DIAGNOSTIC broadcast with PLAYER part only to room: game_room_#{@game_room.code}"
+        ActionCable.server.broadcast("game_room_#{@game_room.code}", { type: 'diagnostic_player_only', player: final_payload[:player] })
+        Rails.logger.info "DIAGNOSTIC broadcast with PLAYER part only SUCCEEDED"
+      rescue => e
+        Rails.logger.error "DIAGNOSTIC broadcast with PLAYER part only FAILED: #{e.class} - #{e.message}"
+        # Do not re-raise, continue to next diagnostic
+      end
+
+      # DIAGNOSTIC BROADCAST - GameRoom part only
+      begin
+        Rails.logger.info "Attempting DIAGNOSTIC broadcast with GAMEROOM part only to room: game_room_#{@game_room.code}"
+        ActionCable.server.broadcast("game_room_#{@game_room.code}", { type: 'diagnostic_gameroom_only', game_room: final_payload[:game_room] })
+        Rails.logger.info "DIAGNOSTIC broadcast with GAMEROOM part only SUCCEEDED"
+      rescue => e
+        Rails.logger.error "DIAGNOSTIC broadcast with GAMEROOM part only FAILED: #{e.class} - #{e.message}"
+        # Do not re-raise, continue to main broadcast attempt
+      end
+
+      # DIAGNOSTIC BROADCAST - GameRoom part MINUS Players Array
+      begin
+        game_room_minus_players = final_payload[:game_room].except(:players)
+        Rails.logger.info "Attempting DIAGNOSTIC broadcast with GAMEROOM part (NO PLAYERS ARRAY) to room: game_room_#{@game_room.code}"
+        ActionCable.server.broadcast("game_room_#{@game_room.code}", { type: 'diagnostic_gameroom_no_players_array', game_room_details: game_room_minus_players })
+        Rails.logger.info "DIAGNOSTIC broadcast with GAMEROOM part (NO PLAYERS ARRAY) SUCCEEDED"
+      rescue => e
+        Rails.logger.error "DIGNOSTIC broadcast with GAMEROOM part (NO PLAYERS ARRAY) FAILED: #{e.class} - #{e.message}"
+      end
+
+      # DIAGNOSTIC BROADCAST - Players Array ONLY
+      begin
+        players_array_only = final_payload[:game_room][:players]
+        Rails.logger.info "Attempting DIAGNOSTIC broadcast with PLAYERS ARRAY ONLY (key: :p_data) to room: game_room_#{@game_room.code}"
+        # Using a generic key like :p_data instead of :players
+        ActionCable.server.broadcast("game_room_#{@game_room.code}", { type: 'diagnostic_p_data_array_only', p_data: players_array_only })
+        Rails.logger.info "DIAGNOSTIC broadcast with PLAYERS ARRAY ONLY (key: :p_data) SUCCEEDED"
+      rescue => e
+        Rails.logger.error "DIAGNOSTIC broadcast with PLAYERS ARRAY ONLY (key: :p_data) FAILED: #{e.class} - #{e.message}"
+      end
+
+      # Prepare final payload for ACTUAL broadcast, renaming :players key in game_room
+      actual_broadcast_payload = final_payload.deep_dup # Ensure we don't modify final_payload if used elsewhere
+      if actual_broadcast_payload[:game_room] && actual_broadcast_payload[:game_room].key?(:players)
+        Rails.logger.info "Renaming :players key to :player_list in game_room data for broadcast."
+        actual_broadcast_payload[:game_room][:player_list] = actual_broadcast_payload[:game_room].delete(:players)
+      end
+
+      Rails.logger.info "Broadcasting ACTUAL player_joined event with modified payload: #{actual_broadcast_payload.inspect[0..500]}..."
       ActionCable.server.broadcast(
         "game_room_#{@game_room.code}",
-        {
-          type: 'player_joined',
-          player: player_data_result,
-          game_room: game_room_data_result
-        }
+        actual_broadcast_payload # This is the payload with game_room.players renamed
       )
       Rails.logger.info "Successfully broadcasted player_joined event"
       

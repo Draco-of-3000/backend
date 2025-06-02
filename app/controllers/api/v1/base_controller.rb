@@ -20,6 +20,25 @@ class Api::V1::BaseController < ActionController::API
       @current_user = User.find_by(id: params[:user_id])
     end
   end
+
+  def deep_to_plain_object(obj)
+    case obj
+    when Hash
+      obj.each_with_object({}) do |(key, value), hash|
+        hash[key.to_s] = deep_to_plain_object(value) # Ensure string keys
+      end
+    when Array
+      obj.map { |value| deep_to_plain_object(value) }
+    when ActiveSupport::TimeWithZone
+      obj.iso8601 # Or obj.to_s
+    when GlobalID::Identification # Add this case
+      obj.to_global_id.to_s # Convert GlobalID to string
+    when ActiveRecord::Base # Add this case for any remaining AR objects
+      obj.attributes.stringify_keys.transform_values { |v| deep_to_plain_object(v) }
+    else
+      obj # Return primitive types as is
+    end
+  end
   
   def current_user
     @current_user
