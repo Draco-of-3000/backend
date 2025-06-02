@@ -49,17 +49,33 @@ class Api::V1::GameRoomsController < Api::V1::BaseController
     
     # Use transaction to ensure atomicity
     Player.transaction do
-      # Force Rails to use traditional insert instead of insert_all to avoid
-      # Rails 8.0 unique index detection issues with Supabase/production PostgreSQL
-      player = Player.new(
-        user: current_user,
-        game_room: @game_room,
-        position: next_position,
-        hand: []
-      )
-      
-      # Use save! instead of create! to bypass Rails 8.0 insert_all optimization
-      player.save!
+      # In production with Supabase, bypass Rails 8.0 insert_all optimization completely
+      # by using raw SQL to avoid unique index detection issues
+      if Rails.env.production?
+        Rails.logger.info "Using raw SQL insert for Player creation to avoid Rails 8.0 + Supabase issues"
+        # Use raw SQL insert to bypass Rails 8.0 insert_all optimization
+        # Using parameterized query to prevent SQL injection
+        result = ActiveRecord::Base.connection.exec_query(
+          "INSERT INTO players (user_id, game_room_id, position, hand, created_at, updated_at) " \
+          "VALUES ($1, $2, $3, $4, NOW(), NOW()) RETURNING id",
+          "Player Insert",
+          [current_user.id, @game_room.id, next_position, '[]']
+        )
+        
+        player_id = result.first['id']
+        player = Player.find(player_id)
+        Rails.logger.info "Successfully created player #{player_id} using raw SQL"
+      else
+        Rails.logger.debug "Using standard Rails approach for Player creation in #{Rails.env}"
+        # Use normal Rails approach in development/test
+        player = Player.new(
+          user: current_user,
+          game_room: @game_room,
+          position: next_position,
+          hand: []
+        )
+        player.save!
+      end
       
       # Broadcast to game room channel
       ActionCable.server.broadcast(
