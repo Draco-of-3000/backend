@@ -9,7 +9,7 @@ test:
   adapter: test
 
 production:
-  adapter: async # Temporarily changed from solid_cable for diagnostics
+  adapter: solid_cable # Reverted back to solid_cable from async
   # connects_to:
   #   database:
   #     writing: primary
