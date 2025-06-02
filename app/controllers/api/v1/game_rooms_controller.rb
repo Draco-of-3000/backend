@@ -46,8 +46,11 @@ class Api::V1::GameRoomsController < Api::V1::BaseController
     end
     
     next_position = @game_room.players.maximum(:position).to_i + 1
-    player = @game_room.players.create!(
+    
+    # Use direct Player creation instead of association create!
+    player = Player.create!(
       user: current_user,
+      game_room: @game_room,
       position: next_position,
       hand: []
     )
