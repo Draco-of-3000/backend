@@ -9,7 +9,11 @@ test:
   adapter: test
 
 production:
-  adapter: solid_cable # Reverted back to solid_cable from async
+  adapter: redis
+  url: <%= ENV.fetch("REDIS_URL") { "redis://localhost:6379/1" } %>
+  # You can enable this channel_prefix for namespacing if you use Redis for other things too.
+  # channel_prefix: uno_online_production
+  # The following lines related to solid_cable or solid_queue are not applicable to the async adapter.
   # connects_to:
   #   database:
   #     writing: primary

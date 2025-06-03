@@ -5,7 +5,7 @@ gem "rails", "~> 8.0.2"
 # Use postgresql as the database for Active Record
 gem "pg", "~> 1.1"
 # Use the Puma web server [https://github.com/puma/puma]
-gem "puma", ">= 5.0"
+gem "puma", "~> 6.4"
 # Build JSON APIs with ease [https://github.com/rails/jbuilder]
 # gem "jbuilder"
 
@@ -38,7 +38,14 @@ gem "thruster", require: false
 gem "rack-cors"
 
 # Redis for Action Cable and caching
-gem "redis", "~> 5.0"
+gem "redis", "~> 4.8"
+
+# Hotwire for modern JavaScript-free web applications
+gem "turbo-rails"
+gem "stimulus-rails"
+
+# Action Cable
+gem "actioncable", "~> 8.0.0.alpha"
 
 group :development, :test do
   # See https://guides.rubyonrails.org/debugging_rails_applications.html#debugging-with-the-debug-gem
