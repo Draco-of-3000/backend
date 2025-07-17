@@ -38,7 +38,7 @@ gem "thruster", require: false
 gem "rack-cors"
 
 # Redis for Action Cable and caching
-gem "redis", "~> 4.8"
+gem "redis", "~> 5.4"
 
 # Hotwire for modern JavaScript-free web applications
 gem "turbo-rails"
