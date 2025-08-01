@@ -176,7 +176,7 @@ GEM
     psych (5.2.6)
       date
       stringio
-    puma (6.6.0)
+    puma (6.6.1)
       nio4r (~> 2.0)
     raabro (1.4.0)
     racc (1.8.1)
@@ -324,7 +324,7 @@ DEPENDENCIES
   debug
   kamal
   pg (~> 1.1)
-  puma (~> 6.4)
+  puma (~> 6.6)
   rack-cors
   rails (~> 8.0.2)
   redis (~> 4.8)
