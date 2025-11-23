@@ -1,4 +1,4 @@
-# UNO Online - Frontend
+# Cloud Uno
 
 A real-time multiplayer UNO card game built with React.js and Rails Action Cable.
 
